@@ -17,6 +17,7 @@ If you ever get stuck, reach out on [Discord](https://discord.com/invite/zerRaGK
 ## How to submit a Pull Request
 
 > **Prerequisites**: The project uses **Python 3.9+** and `pre-commit` for development.
+> If you plan to touch the frontend, you'll also need **Node ≥18** (for Tailwind).
 
 1. **Fork** the repository.
 
@@ -62,7 +63,22 @@ If you ever get stuck, reach out on [Discord](https://discord.com/invite/zerRaGK
    pre-commit run --all-files
    ```
 
-9. **Run the local server** to sanity-check:
+9. **If you edited templates or CSS** rebuild Tailwind:
+
+   ```bash
+   # one-time install
+   npm ci
+
+   # build once
+   npm run build:css
+
+   # or watch & rebuild on every save
+   npm run dev:css
+   ```
+
+   *Skip this step if your PR only touches Python code.*
+
+10. **Run the local server** to sanity-check:
 
     ```bash
     cd src
@@ -71,22 +87,30 @@ If you ever get stuck, reach out on [Discord](https://discord.com/invite/zerRaGK
 
     Open [http://localhost:8000](http://localhost:8000) to confirm everything works.
 
-10. **Commit** (signed):
+11. **Commit** (signed):
 
     ```bash
     git commit -S -m "Your commit message"
     ```
 
-    If *pre-commit* complains, fix the problems and repeat **5 – 9**.
+    If *pre-commit* complains, fix the problems and repeat **6 – 10**.
 
-11. **Push** your branch:
+12. **Push** your branch:
 
     ```bash
     git push origin your-branch
     ```
 
-12. **Open a pull request** on GitHub with a clear description.
+13. **Open a pull request** on GitHub with a clear description.
 
-13. **Iterate** on any review feedback—update your branch and repeat **6 – 11** as needed.
+14. **Iterate** on any review feedback—update your branch and repeat **6 – 13** as needed.
 
 *(Optional) Invite a maintainer to your branch for easier collaboration.*
+
+---
+
+## CSS & build artefacts
+
+- **Do not commit `src/static/css/site.css`.** The CI pipeline runs `npm run build:css` during the container/image build, so the artefact is produced automatically.
+
+- When developing locally you may run the build yourself (see step 9) so you can preview the styles.
