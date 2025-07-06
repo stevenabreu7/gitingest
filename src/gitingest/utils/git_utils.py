@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import re
+import sys
 from typing import Final
 from urllib.parse import urlparse
 
@@ -13,6 +14,7 @@ from starlette.status import HTTP_200_OK, HTTP_401_UNAUTHORIZED, HTTP_403_FORBID
 
 from gitingest.utils.compat_func import removesuffix
 from gitingest.utils.exceptions import InvalidGitHubTokenError
+from server.server_utils import Colors
 
 # GitHub Personal-Access tokens (classic + fine-grained).
 #   - ghp_ / gho_ / ghu_ / ghs_ / ghr_  → 36 alphanumerics
@@ -74,6 +76,8 @@ async def run_command(*args: str) -> tuple[bytes, bytes]:
 async def ensure_git_installed() -> None:
     """Ensure Git is installed and accessible on the system.
 
+    On Windows, this also checks whether Git is configured to support long file paths.
+
     Raises
     ------
     RuntimeError
@@ -85,6 +89,20 @@ async def ensure_git_installed() -> None:
     except RuntimeError as exc:
         msg = "Git is not installed or not accessible. Please install Git first."
         raise RuntimeError(msg) from exc
+    if sys.platform == "win32":
+        try:
+            stdout, _ = await run_command("git", "config", "core.longpaths")
+            if stdout.decode().strip().lower() != "true":
+                print(
+                    f"{Colors.BROWN}WARN{Colors.END}: {Colors.RED}Git clone may fail on Windows "
+                    f"due to long file paths:{Colors.END}",
+                )
+                print(f"{Colors.RED}To avoid this issue, consider enabling long path support with:{Colors.END}")
+                print(f"{Colors.RED}    git config --global core.longpaths true{Colors.END}")
+                print(f"{Colors.RED}Note: This command may require administrator privileges.{Colors.END}")
+        except RuntimeError:
+            # Ignore if checking 'core.longpaths' fails.
+            pass
 
 
 async def check_repo_exists(url: str, token: str | None = None) -> bool:
