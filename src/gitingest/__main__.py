@@ -45,7 +45,7 @@ class _CLIArgs(TypedDict):
     "--include-pattern",
     "-i",
     multiple=True,
-    help="Shell-style patterns to include.",
+    help="Shell-style patterns to include; unrelated directories are skipped.",
 )
 @click.option("--branch", "-b", default=None, help="Branch to clone and ingest")
 @click.option(
