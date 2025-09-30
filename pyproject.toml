@@ -101,7 +101,7 @@ ignore = [  # https://docs.astral.sh/ruff/rules/...
     "BLE001", # blind-except, TODO: replace with specific exceptions
     "FAST003", # fast-api-unused-path-parameter, TODO: fix
 ]
-per-file-ignores = { "tests/**/*.py" = ["S101"] } # Skip the "assert used" warning
+per-file-ignores = { "tests/**/*.py" = ["S101"], "src/gitingest/ingestion.py" = ["C901", "PLR0912"] } # Skip the "assert used" warning and complexity checks
 
 [tool.ruff.lint.pylint]
 max-returns = 10

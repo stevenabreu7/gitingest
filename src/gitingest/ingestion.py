@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pathspec import PathSpec
+
 from gitingest.config import MAX_DIRECTORY_DEPTH, MAX_FILES, MAX_TOTAL_SIZE_BYTES
 from gitingest.output_formatter import format_node
 from gitingest.schemas import FileSystemNode, FileSystemNodeType, FileSystemStats
@@ -104,7 +106,29 @@ def ingest_query(query: IngestionQuery) -> tuple[str, str, str]:
 
     stats = FileSystemStats()
 
-    _process_node(node=root_node, query=query, stats=stats)
+    include_files: set[str] | None = None
+    include_dirs: set[str] | None = None
+
+    if query.include_patterns:
+        spec = PathSpec.from_lines("gitwildmatch", query.include_patterns)
+        matched = [path / p for p in spec.match_tree(path)]
+        include_files = {m.relative_to(query.local_path).as_posix() for m in matched if m.is_file() or m.is_symlink()}
+        include_dirs = set()
+        for m in matched:
+            cur = m.parent
+            while True:
+                include_dirs.add(cur.relative_to(query.local_path).as_posix())
+                if cur == query.local_path:
+                    break
+                cur = cur.parent
+
+    _process_node(
+        node=root_node,
+        query=query,
+        stats=stats,
+        include_files=include_files,
+        include_dirs=include_dirs,
+    )
 
     logger.info(
         "Directory processing completed",
@@ -120,7 +144,15 @@ def ingest_query(query: IngestionQuery) -> tuple[str, str, str]:
     return format_node(root_node, query=query)
 
 
-def _process_node(node: FileSystemNode, query: IngestionQuery, stats: FileSystemStats) -> None:
+def _process_node(
+    node: FileSystemNode,
+    query: IngestionQuery,
+    stats: FileSystemStats,
+    *,
+    include_files: set[str] | None = None,
+    include_dirs: set[str] | None = None,
+) -> None:
+    # pylint: disable=too-many-branches
     """Process a file or directory item within a directory.
 
     This function handles each file or directory item, checking if it should be included or excluded based on the
@@ -134,6 +166,12 @@ def _process_node(node: FileSystemNode, query: IngestionQuery, stats: FileSystem
         The parsed query object containing information about the repository and query parameters.
     stats : FileSystemStats
         Statistics tracking object for the total file count and size.
+    include_files : set[str] | None, optional
+        Relative file paths that should be processed. If ``None``, all files are
+        considered.
+    include_dirs : set[str] | None, optional
+        Relative directory paths that should be traversed. If ``None``, all
+        directories are considered.
 
     """
     if limit_exceeded(stats, depth=node.depth):
@@ -143,7 +181,15 @@ def _process_node(node: FileSystemNode, query: IngestionQuery, stats: FileSystem
         if query.ignore_patterns and _should_exclude(sub_path, query.local_path, query.ignore_patterns):
             continue
 
-        if query.include_patterns and not _should_include(sub_path, query.local_path, query.include_patterns):
+        rel = sub_path.relative_to(query.local_path).as_posix()
+
+        if include_dirs is not None or include_files is not None:
+            if sub_path.is_dir():
+                if include_dirs is not None and rel not in include_dirs:
+                    continue
+            elif include_files is not None and rel not in include_files:
+                continue
+        elif query.include_patterns and not _should_include(sub_path, query.local_path, query.include_patterns):
             continue
 
         if sub_path.is_symlink():
@@ -169,7 +215,13 @@ def _process_node(node: FileSystemNode, query: IngestionQuery, stats: FileSystem
                 depth=node.depth + 1,
             )
 
-            _process_node(node=child_directory_node, query=query, stats=stats)
+            _process_node(
+                node=child_directory_node,
+                query=query,
+                stats=stats,
+                include_files=include_files,
+                include_dirs=include_dirs,
+            )
 
             if not child_directory_node.children:
                 continue
