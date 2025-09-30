@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from functools import lru_cache
 from typing import TYPE_CHECKING
@@ -50,30 +51,45 @@ def _should_include(path: Path, base_path: Path, include_patterns: set[str]) -> 
         return True
 
     dir_parts = _relative_parts(rel_path)
-    return any(_pattern_could_match_directory(pattern_parts, dir_parts) for pattern_parts in parsed_patterns)
+    return any(_pattern_could_match_directory(pattern, dir_parts) for pattern in parsed_patterns)
 
 
 @lru_cache(maxsize=None)
 def _get_include_spec(
     patterns_key: tuple[str, ...],
-) -> tuple[PathSpec, tuple[tuple[str, ...], ...]]:
+) -> tuple[PathSpec, tuple["_ParsedIncludePattern", ...]]:
     """Return the ``PathSpec`` and parsed pattern parts for ``include_patterns``."""
 
     spec = PathSpec.from_lines("gitwildmatch", patterns_key)
-    parsed = tuple(_split_pattern(pattern) for pattern in patterns_key)
+    parsed = tuple(_parse_include_pattern(pattern) for pattern in patterns_key)
     return spec, parsed
 
 
-def _split_pattern(pattern: str) -> tuple[str, ...]:
-    """Split an include pattern into path segments."""
+@dataclass(frozen=True)
+class _ParsedIncludePattern:
+    """Represent a parsed include pattern for directory matching."""
+
+    parts: tuple[str, ...]
+    has_dir_separator: bool
+
+
+def _parse_include_pattern(pattern: str) -> _ParsedIncludePattern:
+    """Split an include pattern into path segments and metadata."""
 
     pattern = pattern.strip()
     if pattern.startswith("./"):
         pattern = pattern[2:]
-    pattern = pattern.strip("/")
-    if not pattern:
-        return tuple()
-    return tuple(part for part in pattern.split("/") if part not in {"", "."})
+
+    stripped_trailing = pattern.rstrip("/")
+    has_dir_separator = "/" in stripped_trailing
+
+    normalized = stripped_trailing.strip("/")
+    if not normalized:
+        parts: tuple[str, ...] = tuple()
+    else:
+        parts = tuple(part for part in normalized.split("/") if part not in {"", "."})
+
+    return _ParsedIncludePattern(parts=parts, has_dir_separator=has_dir_separator)
 
 
 def _relative_parts(rel_path: Path) -> tuple[str, ...]:
@@ -85,8 +101,13 @@ def _relative_parts(rel_path: Path) -> tuple[str, ...]:
     return tuple(str(part) for part in parts)
 
 
-def _pattern_could_match_directory(pattern_parts: tuple[str, ...], dir_parts: tuple[str, ...]) -> bool:
+def _pattern_could_match_directory(pattern: _ParsedIncludePattern, dir_parts: tuple[str, ...]) -> bool:
     """Return ``True`` if ``pattern_parts`` could match a path under ``dir_parts``."""
+
+    if not pattern.has_dir_separator:
+        # Patterns without a directory separator match basenames anywhere, so any
+        # directory could still contain a matching file deeper inside.
+        return True
 
     memo: dict[tuple[int, int], bool] = {}
 
@@ -97,11 +118,11 @@ def _pattern_could_match_directory(pattern_parts: tuple[str, ...], dir_parts: tu
         if d_idx == len(dir_parts):
             memo[key] = True
             return True
-        if p_idx == len(pattern_parts):
+        if p_idx == len(pattern.parts):
             memo[key] = False
             return False
 
-        part = pattern_parts[p_idx]
+        part = pattern.parts[p_idx]
         if part == "**":
             if _matches(p_idx + 1, d_idx) or _matches(p_idx, d_idx + 1):
                 memo[key] = True
