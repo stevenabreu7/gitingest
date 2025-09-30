@@ -57,9 +57,8 @@ def _should_include(path: Path, base_path: Path, include_patterns: set[str]) -> 
 @lru_cache(maxsize=None)
 def _get_include_spec(
     patterns_key: tuple[str, ...],
-) -> tuple[PathSpec, tuple["_ParsedIncludePattern", ...]]:
+) -> tuple[PathSpec, tuple[_ParsedIncludePattern, ...]]:
     """Return the ``PathSpec`` and parsed pattern parts for ``include_patterns``."""
-
     spec = PathSpec.from_lines("gitwildmatch", patterns_key)
     parsed = tuple(_parse_include_pattern(pattern) for pattern in patterns_key)
     return spec, parsed
@@ -75,7 +74,6 @@ class _ParsedIncludePattern:
 
 def _parse_include_pattern(pattern: str) -> _ParsedIncludePattern:
     """Split an include pattern into path segments and metadata."""
-
     pattern = pattern.strip()
     if pattern.startswith("./"):
         pattern = pattern[2:]
@@ -85,7 +83,7 @@ def _parse_include_pattern(pattern: str) -> _ParsedIncludePattern:
 
     normalized = stripped_trailing.strip("/")
     if not normalized:
-        parts: tuple[str, ...] = tuple()
+        parts: tuple[str, ...] = ()
     else:
         parts = tuple(part for part in normalized.split("/") if part not in {"", "."})
 
@@ -94,7 +92,6 @@ def _parse_include_pattern(pattern: str) -> _ParsedIncludePattern:
 
 def _relative_parts(rel_path: Path) -> tuple[str, ...]:
     """Return the normalized parts for a relative ``Path``."""
-
     parts = rel_path.parts
     if parts and parts[0] == ".":
         parts = parts[1:]
@@ -103,7 +100,6 @@ def _relative_parts(rel_path: Path) -> tuple[str, ...]:
 
 def _pattern_could_match_directory(pattern: _ParsedIncludePattern, dir_parts: tuple[str, ...]) -> bool:
     """Return ``True`` if ``pattern_parts`` could match a path under ``dir_parts``."""
-
     if not pattern.has_dir_separator:
         # Patterns without a directory separator match basenames anywhere, so any
         # directory could still contain a matching file deeper inside.
@@ -115,27 +111,22 @@ def _pattern_could_match_directory(pattern: _ParsedIncludePattern, dir_parts: tu
         key = (p_idx, d_idx)
         if key in memo:
             return memo[key]
+
         if d_idx == len(dir_parts):
-            memo[key] = True
-            return True
-        if p_idx == len(pattern.parts):
-            memo[key] = False
-            return False
+            result = True
+        elif p_idx == len(pattern.parts):
+            result = False
+        else:
+            part = pattern.parts[p_idx]
+            if part == "**":
+                result = _matches(p_idx + 1, d_idx) or _matches(p_idx, d_idx + 1)
+            elif fnmatchcase(dir_parts[d_idx], part):
+                result = _matches(p_idx + 1, d_idx + 1)
+            else:
+                result = False
 
-        part = pattern.parts[p_idx]
-        if part == "**":
-            if _matches(p_idx + 1, d_idx) or _matches(p_idx, d_idx + 1):
-                memo[key] = True
-                return True
-            memo[key] = False
-            return False
-
-        if fnmatchcase(dir_parts[d_idx], part):
-            memo[key] = _matches(p_idx + 1, d_idx + 1)
-            return memo[key]
-
-        memo[key] = False
-        return False
+        memo[key] = result
+        return result
 
     return _matches(0, 0)
 
